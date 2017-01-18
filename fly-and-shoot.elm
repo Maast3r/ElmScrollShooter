@@ -22,6 +22,7 @@ type alias Model = {
   , fill : String
   , borders : Borders
   , stars : List Star
+  , bullets : List BulletUpdater
 }
 
 init : (Model, Cmd Msg)
@@ -31,7 +32,8 @@ init =
     r=20,
     fill="#AAFFFF",
     borders=gameBorders,
-    stars=starList}, Cmd.none)
+    stars=starList,
+    bullets=[]}, Cmd.none)
 
 type alias Borders = {left : Int, right : Int, top : Int, bottom : Int, fill : String}
 gameBorders : Borders
@@ -62,7 +64,7 @@ starList =
   , {x=600, y=234}
   , {x=570, y=10}
   , {x=610, y=789}
-  , {x=870, y=1089}
+  , {x=870, y=589}
   , {x=700, y=875}
   , {x=915, y=55}
   , {x=1360, y=734}
@@ -70,7 +72,7 @@ starList =
   , {x=900, y=234}
   , {x=1350, y=10}
   , {x=1150, y=789}
-  , {x=840, y=1089}
+  , {x=840, y=89}
   , {x=100, y=875}
   , {x=1350, y=670}
   , {x=1150, y=189}
@@ -78,19 +80,46 @@ starList =
   , {x=1079, y=875}
   ]
 
+type alias Bullet = {x : Int, y : Int, width : Int, height : Int, fill : String, friendly : Bool}
+type BulletUpdater = BulletUpdater(Bullet) (Float -> BulletUpdater)
+
 -- UPDATE
 
 type Msg
-  = Move Int Int | Click | MoveStars Time
+  = Move Int Int 
+  | Click 
+  | MoveStars Time 
+  | UpdateBullets Time
 
 update: Msg -> Model -> (Model, Cmd a)
 update msg model =
   case msg of
     Move x y ->
       ({ model | x = x, y = y } , Cmd.none)
-    Click -> (model, Cmd.none)
+    Click ->
+     ({ model | bullets=model.bullets ++ [spawnFriendlyBullet model] }, Cmd.none)
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
+    UpdateBullets t ->
+      ({ model | bullets=(List.map (doBulletUpdate t) model.bullets) }, Cmd.none)
+
+spawnFriendlyBullet : Model -> BulletUpdater
+spawnFriendlyBullet model =
+  let
+    newBullet = {x=model.x-2, y=model.y-model.r-3, width=4, height=3, fill="#00FFFF", friendly=True}
+  in
+    BulletUpdater newBullet (straightBulletUpdate newBullet)
+
+doBulletUpdate delta bulletUpdater =
+    case bulletUpdater of
+      BulletUpdater bullet updateFunction -> updateFunction delta
+
+straightBulletUpdate : Bullet -> Float -> BulletUpdater
+straightBulletUpdate bullet delta =
+  let
+    updatedBullet = { bullet | y=bullet.y-(3)}
+  in
+    BulletUpdater updatedBullet (straightBulletUpdate updatedBullet)
 
 moveStarsHelper : Star -> Star
 moveStarsHelper star =
@@ -110,9 +139,17 @@ subscriptions model =
   Sub.batch
    [ Mouse.moves (\{x, y} -> Move x y),
      Mouse.clicks (\{x, y} -> Click),
-     Time.every (50*Time.millisecond) MoveStars]
+     Time.every (50*Time.millisecond) MoveStars,
+     Time.every (10*Time.millisecond) UpdateBullets]
 
 -- VIEW
+
+getBullet : BulletUpdater -> Bullet
+getBullet bUpdater =
+  case bUpdater of
+    BulletUpdater bullet updateFunction ->
+      bullet
+
 
 view : Model -> Html Msg
 view model = 
@@ -120,6 +157,8 @@ view model =
       (
         [rect [ x (toString model.borders.left), y (toString model.borders.top), width (toString model.borders.right),
           height (toString model.borders.bottom), fill model.borders.fill ] []]
+      ++ List.map(\star -> (circle [cx (toString star.x), cy (toString star.y), r "2", fill "#FFFFFF"] [])) model.stars
       ++ [circle [ cx (toString model.x), cy (toString model.y), r (toString model.r), fill model.fill ] []]
-      ++ List.map(\star -> (circle [cx (toString star.x), cy (toString star.y), r "2", fill "#FFFFFF"] [])) model.stars)
+      ++ List.map(\bullet -> (rect [x (toString bullet.x), y (toString bullet.y), width (toString bullet.width), height (toString bullet.height),
+            fill bullet.fill] [])) (List.map getBullet model.bullets) )
     
