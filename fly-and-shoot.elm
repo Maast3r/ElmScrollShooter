@@ -5,6 +5,12 @@ import Svg.Attributes exposing (..)
 import Time exposing (Time, second)
 import List
 
+{- INSTRUCTIONS
+  - Use your mouse to move the plane
+  - Left click to fire your weapon
+  - 1-4 to cycle weapons
+-}
+
 main =
   Html.program
     { init = init
@@ -13,7 +19,9 @@ main =
     , subscriptions = subscriptions
     }
 
--- MODEL
+
+--- MODEL ---
+
 
 type alias Model = {
     x : Int
@@ -80,10 +88,12 @@ starList =
   , {x=1079, y=875}
   ]
 
-type alias Bullet = {x : Int, y : Int, width : Int, height : Int, fill : String, friendly : Bool}
-type BulletUpdater = BulletUpdater(Bullet) (Float -> BulletUpdater)
+type alias Bullet = {x : Int, y : Int, width : Int, height : Int, fill : String, friendly : Bool, dmg : Int, life : Int}
+type BulletUpdater = BulletUpdater Bullet (Float -> BulletUpdater)
 
--- UPDATE
+
+--- UPDATE ---
+
 
 type Msg
   = Move Int Int 
@@ -98,46 +108,123 @@ update msg model =
     Move x y ->
       ({ model | x = x, y = y } , Cmd.none)
     Click ->
-     ({ model | bullets=model.bullets ++ [spawnFriendlyBullet model] }, Cmd.none)
+     ({ model | bullets=model.bullets ++ [spawnBoomerangBulleter model True] }, Cmd.none)
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     UpdateBullets t ->
       ({ model | bullets=(List.map (doBulletUpdate t) model.bullets) }, Cmd.none)
     RemoveOffScreenBullets t ->
-      ({ model | bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
+      ({ model | bullets=(List.filter filterOnScreenBullets model.bullets) }, Cmd.none)
 
 
---- BULLET LOGIC
+--- BULLET LOGIC ---
+  -- linear gun
+  -- growing blob
+  -- laser dmg over time
+  -- boomerang
+
+
+getBullet : BulletUpdater -> Bullet
+getBullet bulletUpdater =
+  case bulletUpdater of
+    BulletUpdater bullet updateFunction ->
+      bullet
 
 doBulletUpdate delta bulletUpdater =
     case bulletUpdater of
-      BulletUpdater bullet updateFunction -> updateFunction delta
+      BulletUpdater bullet updateFunction ->
+        updateFunction delta
 
-filterBullets : BulletUpdater -> Bool
-filterBullets bulletUpdater =
+filterOnScreenBullets : BulletUpdater -> Bool
+filterOnScreenBullets bulletUpdater =
   let
     bullet = getBullet bulletUpdater
   in
-    if bullet.y <= 0 then
+    if bullet.y <= 0 || bullet.y >= 1400 || bullet.x <= 0 || bullet.x >= 1360 || bullet.life <= 0 then
       False
     else
       True
 
-spawnFriendlyBullet : Model -> BulletUpdater
-spawnFriendlyBullet model =
-  let
-    newBullet = {x=model.x-2, y=model.y-model.r-3, width=4, height=3, fill="#00FFFF", friendly=True}
-  in
-    BulletUpdater newBullet (straightBulletUpdate newBullet)
+-- LINEAR
 
-straightBulletUpdate : Bullet -> Float -> BulletUpdater
-straightBulletUpdate bullet delta =
+spawnLinearBullet : Model -> Bool -> BulletUpdater
+spawnLinearBullet model bool =
+  let
+    newBullet = {x=model.x-2, y=model.y-model.r-3, width=4, height=3, fill="#00FFFF", friendly=bool, dmg=500, life=1}
+  in
+    BulletUpdater newBullet (linearYBulletUpdate newBullet)
+
+linearYBulletUpdate : Bullet -> Float -> BulletUpdater
+linearYBulletUpdate bullet delta =
+  let
+    updatedBullet = { bullet | y=bullet.y-3}
+  in
+    BulletUpdater updatedBullet (linearYBulletUpdate updatedBullet)
+
+-- BLOB
+
+spawnBlobBullet : Model -> Bool -> BulletUpdater
+spawnBlobBullet model bool =
+  let
+    newBullet = {x=model.x-1, y=model.y-model.r-3, width=2, height=3, fill="#FFAAFF", friendly=bool, dmg=1, life=1}
+  in
+    BulletUpdater newBullet (blobBulletUpdate newBullet newBullet.x newBullet.y)
+
+blobBulletUpdate : Bullet -> Int -> Int -> Float -> BulletUpdater
+blobBulletUpdate bullet initialX initialY delta =
+  let
+    newY = bullet.y-3
+    deltaY = newY - initialY
+    newX = initialX + round(25*(sin(toFloat(deltaY)/15)))
+    updatedBiggerBullet = { bullet | x=newX, width=bullet.width+1, dmg=bullet.dmg+1, y=newY}
+  in
+    BulletUpdater updatedBiggerBullet (blobBulletUpdate updatedBiggerBullet initialX initialY)
+
+-- BOOMERANG
+
+spawnBoomerangBulleter : Model -> Bool -> BulletUpdater
+spawnBoomerangBulleter model bool =
+  let
+    newBullet = {x=model.x+2, y=model.y-model.r-3, width=4, height=3, fill="#AAFFAA", friendly=bool, dmg=500, life=3}
+  in
+    BulletUpdater newBullet (boomerangForwardBulletUpdate newBullet newBullet.x newBullet.y)
+
+boomerangForwardBulletUpdate : Bullet -> Int -> Int -> Float -> BulletUpdater
+boomerangForwardBulletUpdate bullet initialX initialY delta =
+  let
+    newY = bullet.y-3
+    deltaY = newY - initialY
+    newX = initialX + round(25*(sin(toFloat(deltaY)/15)))
+    updatedBiggerBullet = { bullet | x=newX, width=bullet.width+1, dmg=bullet.dmg+1, y=newY}
+  in
+    BulletUpdater updatedBiggerBullet (boomerangForwardBulletUpdate updatedBiggerBullet initialX initialY)
+
+-- SHRAPNEL
+
+spawnShrapnelBullet : Model -> Bool -> BulletUpdater
+spawnShrapnelBullet model bool =
+  let
+    newBullet = {x=model.x-4, y=model.y-model.r-3, width=8, height=3, fill="#FF00FF", friendly=bool, dmg=1, life=1}
+  in
+    BulletUpdater newBullet (shrapnelBulletUpdate newBullet (newBullet.y-100))
+
+shrapnelBulletUpdate : Bullet -> Int -> Float -> BulletUpdater
+shrapnelBulletUpdate bullet targetY delta =
   let
     updatedBullet = { bullet | y=bullet.y-(3)}
   in
-    BulletUpdater updatedBullet (straightBulletUpdate updatedBullet)
+    if bullet.y <= targetY then
+      BulletUpdater updatedBullet (doNothingUpdate bullet)
+    else
+      BulletUpdater updatedBullet (shrapnelBulletUpdate updatedBullet targetY)
 
---- BACKGROUND STAR LOGIC
+
+doNothingUpdate bullet delta =
+  BulletUpdater bullet (doNothingUpdate bullet)
+
+
+--- BACKGROUND STAR LOGIC ---
+
 
 moveStarsHelper : Star -> Star
 moveStarsHelper star =
@@ -150,7 +237,9 @@ moveStarsHelper star =
     else
       {star | y = starNextY}
 
--- SUBSCRIPTIONS
+
+-- SUBSCRIPTIONS ---
+
 
 subscriptions: Model -> Sub Msg
 subscriptions model =
@@ -161,18 +250,13 @@ subscriptions model =
      Time.every (10*Time.millisecond) UpdateBullets,
      Time.every Time.millisecond RemoveOffScreenBullets]
 
--- VIEW
 
-getBullet : BulletUpdater -> Bullet
-getBullet bUpdater =
-  case bUpdater of
-    BulletUpdater bullet updateFunction ->
-      bullet
+-- VIEW ---
 
 
 view : Model -> Html Msg
 view model = 
-  svg [ viewBox "0 0 100% 100%", width "100%", height "99%" ]
+  svg [ viewBox "0 0 100% 100%", width "100%", height "99.9%" ]
       (
         [rect [ x (toString model.borders.left), y (toString model.borders.top), width (toString model.borders.right),
           height (toString model.borders.bottom), fill model.borders.fill ] []]
