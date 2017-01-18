@@ -1,0 +1,291 @@
+var _user$project$Main$view = function (model) {
+	return A2(
+		_elm_lang$svg$Svg$svg,
+		{
+			ctor: '::',
+			_0: _elm_lang$svg$Svg_Attributes$viewBox('0 0 100% 100%'),
+			_1: {
+				ctor: '::',
+				_0: _elm_lang$svg$Svg_Attributes$width('100%'),
+				_1: {
+					ctor: '::',
+					_0: _elm_lang$svg$Svg_Attributes$height('99%'),
+					_1: {ctor: '[]'}
+				}
+			}
+		},
+		A2(
+			_elm_lang$core$Basics_ops['++'],
+			{
+				ctor: '::',
+				_0: A2(
+					_elm_lang$svg$Svg$rect,
+					{
+						ctor: '::',
+						_0: _elm_lang$svg$Svg_Attributes$x(
+							_elm_lang$core$Basics$toString(model.borders.left)),
+						_1: {
+							ctor: '::',
+							_0: _elm_lang$svg$Svg_Attributes$y(
+								_elm_lang$core$Basics$toString(model.borders.top)),
+							_1: {
+								ctor: '::',
+								_0: _elm_lang$svg$Svg_Attributes$width(
+									_elm_lang$core$Basics$toString(model.borders.right)),
+								_1: {
+									ctor: '::',
+									_0: _elm_lang$svg$Svg_Attributes$height(
+										_elm_lang$core$Basics$toString(model.borders.bottom)),
+									_1: {
+										ctor: '::',
+										_0: _elm_lang$svg$Svg_Attributes$fill(model.borders.fill),
+										_1: {ctor: '[]'}
+									}
+								}
+							}
+						}
+					},
+					{ctor: '[]'}),
+				_1: {ctor: '[]'}
+			},
+			A2(
+				_elm_lang$core$Basics_ops['++'],
+				{
+					ctor: '::',
+					_0: A2(
+						_elm_lang$svg$Svg$circle,
+						{
+							ctor: '::',
+							_0: _elm_lang$svg$Svg_Attributes$cx(
+								_elm_lang$core$Basics$toString(model.x)),
+							_1: {
+								ctor: '::',
+								_0: _elm_lang$svg$Svg_Attributes$cy(
+									_elm_lang$core$Basics$toString(model.y)),
+								_1: {
+									ctor: '::',
+									_0: _elm_lang$svg$Svg_Attributes$r(
+										_elm_lang$core$Basics$toString(model.r)),
+									_1: {
+										ctor: '::',
+										_0: _elm_lang$svg$Svg_Attributes$fill(model.fill),
+										_1: {ctor: '[]'}
+									}
+								}
+							}
+						},
+						{ctor: '[]'}),
+					_1: {ctor: '[]'}
+				},
+				A2(
+					_elm_lang$core$List$map,
+					function (star) {
+						return A2(
+							_elm_lang$svg$Svg$circle,
+							{
+								ctor: '::',
+								_0: _elm_lang$svg$Svg_Attributes$cx(
+									_elm_lang$core$Basics$toString(star.x)),
+								_1: {
+									ctor: '::',
+									_0: _elm_lang$svg$Svg_Attributes$cy(
+										_elm_lang$core$Basics$toString(star.y)),
+									_1: {
+										ctor: '::',
+										_0: _elm_lang$svg$Svg_Attributes$r('2'),
+										_1: {
+											ctor: '::',
+											_0: _elm_lang$svg$Svg_Attributes$fill('#FFFFFF'),
+											_1: {ctor: '[]'}
+										}
+									}
+								}
+							},
+							{ctor: '[]'});
+					},
+					model.stars))));
+};
+var _user$project$Main$moveStarsHelper = function (star) {
+	var starNextY = star.y + 1;
+	var starResetY = 0;
+	return (_elm_lang$core$Native_Utils.cmp(star.y, 1400) > -1) ? _elm_lang$core$Native_Utils.update(
+		star,
+		{y: starResetY}) : _elm_lang$core$Native_Utils.update(
+		star,
+		{y: starNextY});
+};
+var _user$project$Main$update = F2(
+	function (msg, model) {
+		var _p0 = msg;
+		switch (_p0.ctor) {
+			case 'Move':
+				return {
+					ctor: '_Tuple2',
+					_0: _elm_lang$core$Native_Utils.update(
+						model,
+						{x: _p0._0, y: _p0._1}),
+					_1: _elm_lang$core$Platform_Cmd$none
+				};
+			case 'Click':
+				return {ctor: '_Tuple2', _0: model, _1: _elm_lang$core$Platform_Cmd$none};
+			default:
+				return {
+					ctor: '_Tuple2',
+					_0: _elm_lang$core$Native_Utils.update(
+						model,
+						{
+							stars: A2(_elm_lang$core$List$map, _user$project$Main$moveStarsHelper, model.stars)
+						}),
+					_1: _elm_lang$core$Platform_Cmd$none
+				};
+		}
+	});
+var _user$project$Main$starList = {
+	ctor: '::',
+	_0: {x: 0, y: 155},
+	_1: {
+		ctor: '::',
+		_0: {x: 50, y: 22},
+		_1: {
+			ctor: '::',
+			_0: {x: 170, y: 856},
+			_1: {
+				ctor: '::',
+				_0: {x: 90, y: 234},
+				_1: {
+					ctor: '::',
+					_0: {x: 200, y: 120},
+					_1: {
+						ctor: '::',
+						_0: {x: 250, y: 68},
+						_1: {
+							ctor: '::',
+							_0: {x: 310, y: 1267},
+							_1: {
+								ctor: '::',
+								_0: {x: 320, y: 945},
+								_1: {
+									ctor: '::',
+									_0: {x: 450, y: 55},
+									_1: {
+										ctor: '::',
+										_0: {x: 400, y: 734},
+										_1: {
+											ctor: '::',
+											_0: {x: 500, y: 434},
+											_1: {
+												ctor: '::',
+												_0: {x: 600, y: 234},
+												_1: {
+													ctor: '::',
+													_0: {x: 570, y: 10},
+													_1: {
+														ctor: '::',
+														_0: {x: 610, y: 789},
+														_1: {
+															ctor: '::',
+															_0: {x: 870, y: 1089},
+															_1: {
+																ctor: '::',
+																_0: {x: 700, y: 875},
+																_1: {
+																	ctor: '::',
+																	_0: {x: 915, y: 55},
+																	_1: {
+																		ctor: '::',
+																		_0: {x: 1360, y: 734},
+																		_1: {
+																			ctor: '::',
+																			_0: {x: 790, y: 434},
+																			_1: {
+																				ctor: '::',
+																				_0: {x: 900, y: 234},
+																				_1: {
+																					ctor: '::',
+																					_0: {x: 1350, y: 10},
+																					_1: {
+																						ctor: '::',
+																						_0: {x: 1150, y: 789},
+																						_1: {
+																							ctor: '::',
+																							_0: {x: 840, y: 1089},
+																							_1: {
+																								ctor: '::',
+																								_0: {x: 100, y: 875},
+																								_1: {ctor: '[]'}
+																							}
+																						}
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+};
+var _user$project$Main$gameBorders = {left: 0, right: 1360, top: 0, bottom: 1400, fill: '#000000'};
+var _user$project$Main$init = {
+	ctor: '_Tuple2',
+	_0: {x: 30, y: 440, r: 20, fill: '#AAFFFF', borders: _user$project$Main$gameBorders, stars: _user$project$Main$starList},
+	_1: _elm_lang$core$Platform_Cmd$none
+};
+var _user$project$Main$Model = F6(
+	function (a, b, c, d, e, f) {
+		return {x: a, y: b, r: c, fill: d, borders: e, stars: f};
+	});
+var _user$project$Main$Borders = F5(
+	function (a, b, c, d, e) {
+		return {left: a, right: b, top: c, bottom: d, fill: e};
+	});
+var _user$project$Main$Star = F2(
+	function (a, b) {
+		return {x: a, y: b};
+	});
+var _user$project$Main$MoveStars = function (a) {
+	return {ctor: 'MoveStars', _0: a};
+};
+var _user$project$Main$Click = {ctor: 'Click'};
+var _user$project$Main$Move = F2(
+	function (a, b) {
+		return {ctor: 'Move', _0: a, _1: b};
+	});
+var _user$project$Main$subscriptions = function (model) {
+	return _elm_lang$core$Platform_Sub$batch(
+		{
+			ctor: '::',
+			_0: _elm_lang$mouse$Mouse$moves(
+				function (_p1) {
+					var _p2 = _p1;
+					return A2(_user$project$Main$Move, _p2.x, _p2.y);
+				}),
+			_1: {
+				ctor: '::',
+				_0: _elm_lang$mouse$Mouse$clicks(
+					function (_p3) {
+						var _p4 = _p3;
+						return _user$project$Main$Click;
+					}),
+				_1: {
+					ctor: '::',
+					_0: A2(_elm_lang$core$Time$every, 50 * _elm_lang$core$Time$millisecond, _user$project$Main$MoveStars),
+					_1: {ctor: '[]'}
+				}
+			}
+		});
+};
+var _user$project$Main$main = _elm_lang$html$Html$program(
+	{init: _user$project$Main$init, view: _user$project$Main$view, update: _user$project$Main$update, subscriptions: _user$project$Main$subscriptions})();
