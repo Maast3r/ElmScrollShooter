@@ -90,6 +90,7 @@ type Msg
   | Click 
   | MoveStars Time 
   | UpdateBullets Time
+  | RemoveOffScreenBullets Time
 
 update: Msg -> Model -> (Model, Cmd a)
 update msg model =
@@ -102,6 +103,25 @@ update msg model =
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     UpdateBullets t ->
       ({ model | bullets=(List.map (doBulletUpdate t) model.bullets) }, Cmd.none)
+    RemoveOffScreenBullets t ->
+      ({ model | bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
+
+
+--- BULLET LOGIC
+
+doBulletUpdate delta bulletUpdater =
+    case bulletUpdater of
+      BulletUpdater bullet updateFunction -> updateFunction delta
+
+filterBullets : BulletUpdater -> Bool
+filterBullets bulletUpdater =
+  let
+    bullet = getBullet bulletUpdater
+  in
+    if bullet.y <= 0 then
+      False
+    else
+      True
 
 spawnFriendlyBullet : Model -> BulletUpdater
 spawnFriendlyBullet model =
@@ -110,16 +130,14 @@ spawnFriendlyBullet model =
   in
     BulletUpdater newBullet (straightBulletUpdate newBullet)
 
-doBulletUpdate delta bulletUpdater =
-    case bulletUpdater of
-      BulletUpdater bullet updateFunction -> updateFunction delta
-
 straightBulletUpdate : Bullet -> Float -> BulletUpdater
 straightBulletUpdate bullet delta =
   let
     updatedBullet = { bullet | y=bullet.y-(3)}
   in
     BulletUpdater updatedBullet (straightBulletUpdate updatedBullet)
+
+--- BACKGROUND STAR LOGIC
 
 moveStarsHelper : Star -> Star
 moveStarsHelper star =
@@ -140,7 +158,8 @@ subscriptions model =
    [ Mouse.moves (\{x, y} -> Move x y),
      Mouse.clicks (\{x, y} -> Click),
      Time.every (50*Time.millisecond) MoveStars,
-     Time.every (10*Time.millisecond) UpdateBullets]
+     Time.every (10*Time.millisecond) UpdateBullets,
+     Time.every Time.millisecond RemoveOffScreenBullets]
 
 -- VIEW
 
@@ -161,4 +180,3 @@ view model =
       ++ [circle [ cx (toString model.x), cy (toString model.y), r (toString model.r), fill model.fill ] []]
       ++ List.map(\bullet -> (rect [x (toString bullet.x), y (toString bullet.y), width (toString bullet.width), height (toString bullet.height),
             fill bullet.fill] [])) (List.map getBullet model.bullets) )
-    
