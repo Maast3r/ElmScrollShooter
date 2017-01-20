@@ -4,6 +4,7 @@ import Svg exposing (..)
 import Svg.Attributes exposing (..)
 import Time exposing (Time, second)
 import List
+import Keyboard
 
 {- INSTRUCTIONS
   - Use your mouse to move the plane
@@ -13,7 +14,8 @@ import List
   GUNS
   Linear Shooter - each shot does 500 dmg
   Blob Shooter - each shot does more dmg with time
-  Boomerang Shooter - each shot does 500dmg when it moves forward, 1000 dmg when it moves backwards, can hit up to 3x
+  Boomerang Shooter - each shot does 500 dmg when it moves forward, 1000 dmg when it moves backwards, can hit up to 3x
+  Shranpel Shooter - each shot deals 1000 dmg, travels a certain distance, then explodes into 4 bullets that each do 500 dmg
 
   ENEMIES
   Basic Red Enemy - 1000 health
@@ -39,6 +41,7 @@ type alias Model = {
   , y : Int
   , r : Int
   , invincible : Bool
+  , gunSelected : Int
   , fill : String
   , borders : Borders
   , stars : List Star
@@ -52,6 +55,7 @@ init =
     y=440,
     r=20,
     invincible=True, -- CHANGE TO TRUE TO CHEAT
+    gunSelected=1,
     fill="#AAFFFF",
     borders=gameBorders,
     stars=starList,
@@ -115,7 +119,8 @@ type EnemyUpdater = EnemyUpdater Enemy (List BulletUpdater) (Model -> EnemyUpdat
 
 type Msg
   = Move Int Int 
-  | Click 
+  | Click
+  | Key Int
   | MoveStars Time 
   | UpdateBullets Time
   | RemoveBullets Time
@@ -123,6 +128,7 @@ type Msg
   | UpdateEnemies Time
   | RemoveEnemies Time
   | DetectPlayerHit Time
+  
 
 update: Msg -> Model -> (Model, Cmd a)
 update msg model =
@@ -130,7 +136,19 @@ update msg model =
     Move x y ->
       ({ model | x = x, y = y } , Cmd.none)
     Click ->
-     ({ model | bullets=model.bullets ++ [spawnShrapnelBullet model True] }, Cmd.none)
+      case model.gunSelected of
+        1 -> ({ model | bullets=model.bullets ++ [spawnLinearBullet model True] }, Cmd.none)
+        2 -> ({ model | bullets=model.bullets ++ [spawnBlobBullet model True] }, Cmd.none)
+        3 -> ({ model | bullets=model.bullets ++ [spawnBoomerangBullet model True] }, Cmd.none)
+        4 -> ({ model | bullets=model.bullets ++ [spawnShrapnelBullet model True] }, Cmd.none)
+        _ -> ({ model | bullets=model.bullets ++ [spawnLinearBullet model True] }, Cmd.none)
+    Key num ->
+      case num of
+        1 -> ({ model | gunSelected=1}, Cmd.none)
+        2 -> ({ model | gunSelected=2}, Cmd.none)
+        3 -> ({ model | gunSelected=3}, Cmd.none)
+        4 -> ({ model | gunSelected=4}, Cmd.none)
+        _ -> (model, Cmd.none)
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     UpdateBullets t ->
@@ -473,6 +491,20 @@ moveStarsHelper star =
       {star | y = starNextY}
 
 
+--- KEY PRESSES ---
+
+
+-- 49-52 are keys 1-4
+handleDown : Keyboard.KeyCode -> Msg
+handleDown state =
+    case state of
+        49 -> Key 1
+        50 -> Key 2
+        51 -> Key 3
+        52 -> Key 4
+        _ -> Key 0
+
+
 -- SUBSCRIPTIONS ---
 
 
@@ -481,6 +513,7 @@ subscriptions model =
   Sub.batch
    [ Mouse.moves (\{x, y} -> Move x y),
      Mouse.clicks (\{x, y} -> Click),
+     Keyboard.downs (\k -> handleDown k),
      Time.every (50*Time.millisecond) MoveStars,
      Time.every (10*Time.millisecond) UpdateBullets,
      Time.every Time.millisecond RemoveBullets,
