@@ -9,6 +9,17 @@ import List
   - Use your mouse to move the plane
   - Left click to fire your weapon
   - 1-4 to cycle weapons
+
+  GUNS
+  Linear Shooter - each shot does 500 dmg
+  Blob Shooter - each shot does more dmg with time
+  Boomerang Shooter - each shot does 500dmg when it moves forward, 1000 dmg when it moves backwards, can hit up to 3x
+
+  ENEMIES
+  Basic Red Enemy - 1000 health
+
+  QUESTIONS
+  - Hide mouse
 -}
 
 main =
@@ -27,6 +38,7 @@ type alias Model = {
     x : Int
   , y : Int
   , r : Int
+  , invincible : Bool
   , fill : String
   , borders : Borders
   , stars : List Star
@@ -39,6 +51,7 @@ init =
   ({x=30,
     y=440,
     r=20,
+    invincible=False, -- CHANGE TO TRUE TO CHEAT
     fill="#AAFFFF",
     borders=gameBorders,
     stars=starList,
@@ -91,10 +104,10 @@ starList =
   ]
 
 type alias Bullet = {x : Int, y : Int, width : Int, height : Int, fill : String, friendly : Bool, dmg : Int, life : Int}
-type BulletUpdater = BulletUpdater Bullet (Float -> BulletUpdater)
+type BulletUpdater = BulletUpdater Bullet (List BulletUpdater) (List EnemyUpdater -> BulletUpdater)
 
 type alias Enemy = {x : Int, y : Int, r : Int, fill : String, life : Int}
-type EnemyUpdater = EnemyUpdater Enemy (Float -> EnemyUpdater)
+type EnemyUpdater = EnemyUpdater Enemy (List BulletUpdater) (Model -> EnemyUpdater)
 
 
 --- UPDATE ---
@@ -109,7 +122,6 @@ type Msg
   | SpawnEnemy Time
   | UpdateEnemies Time
   | RemoveEnemies Time
-  | CheckForEnemyBulletCollision Time
 
 update: Msg -> Model -> (Model, Cmd a)
 update msg model =
@@ -117,39 +129,49 @@ update msg model =
     Move x y ->
       ({ model | x = x, y = y } , Cmd.none)
     Click ->
-     ({ model | bullets=model.bullets ++ [spawnLinearBullet model True] }, Cmd.none)
+     ({ model | bullets=model.bullets ++ [spawnShrapnelBullet model True] }, Cmd.none)
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     UpdateBullets t ->
-      ({ model | bullets=(List.map (doBulletUpdate t) model.bullets) }, Cmd.none)
+      let 
+        updatedBulletsAndNewBullets = List.map(doBulletUpdate model.enemies) model.bullets
+        updatedBulletUpdaters = List.map(\(b1,b2) -> b1) updatedBulletsAndNewBullets
+        newBullets = List.map(\(b1,b2) -> b2) updatedBulletsAndNewBullets
+        result = List.foldr (++) updatedBulletUpdaters newBullets
+      in
+        ({ model | bullets=result }, Cmd.none)
     RemoveBullets t ->
       ({ model | bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
     SpawnEnemy t ->
       ({ model | enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
     UpdateEnemies t ->
-      ({ model | enemies=(List.map (doEnemyUpdate t) model.enemies) }, Cmd.none)
+      let 
+        updatedEnemiesAndNewBullets = List.map(doEnemyUpdate model) model.enemies
+        updatedEnemyUpdaters = List.map(\(e,b) -> e) updatedEnemiesAndNewBullets
+        newBullets = List.map(\(e,b) -> b) updatedEnemiesAndNewBullets
+        updatedBulletUpdaters = List.foldr (++) model.bullets newBullets
+      in
+        ({ model | enemies=updatedEnemyUpdaters, bullets=updatedBulletUpdaters}, Cmd.none)
     RemoveEnemies t ->
       ({ model | enemies=(List.filter filterEnemies model.enemies) }, Cmd.none)
-    CheckForEnemyBulletCollision t ->
-      checkForEnemyBulletCollision model
 
 --- BULLET LOGIC ---
   -- linear gun
   -- growing blob
-  -- laser dmg over time
   -- boomerang, lives through 3 hits
+  -- shrapnel gun that shoots more bullets
 
 
 getBullet : BulletUpdater -> Bullet
 getBullet bulletUpdater =
   case bulletUpdater of
-    BulletUpdater bullet updateFunction ->
+    BulletUpdater bullet bulletUpdaters updateFunction ->
       bullet
 
-doBulletUpdate delta bulletUpdater =
+doBulletUpdate enemies bulletUpdater =
     case bulletUpdater of
-      BulletUpdater bullet updateFunction ->
-        updateFunction delta
+      BulletUpdater bullet newBulletUpdaters updateFunction ->
+        (updateFunction enemies, newBulletUpdaters)
 
 filterBullets : BulletUpdater -> Bool
 filterBullets bulletUpdater =
@@ -168,33 +190,71 @@ spawnLinearBullet model bool =
   let
     newBullet = {x=model.x-2, y=model.y-model.r-3, width=4, height=3, fill="#00FFFF", friendly=bool, dmg=500, life=1}
   in
-    BulletUpdater newBullet (linearYBulletUpdate newBullet)
+    BulletUpdater newBullet [] (linearYUpBulletUpdate newBullet)
 
-linearYBulletUpdate : Bullet -> Float -> BulletUpdater
-linearYBulletUpdate bullet delta =
+linearYUpBulletUpdate : Bullet -> List EnemyUpdater -> BulletUpdater
+linearYUpBulletUpdate bullet enemyUpdaters =
   let
-    updatedBullet = { bullet | y=bullet.y-5 }
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
+    updatedBullet = { bullet | y=bullet.y-5, life=bullet.life - (List.length collidedTargets) }
   in
-    BulletUpdater updatedBullet (linearYBulletUpdate updatedBullet)
+    BulletUpdater updatedBullet [] (linearYUpBulletUpdate updatedBullet)
+
+linearYDownBulletUpdate : Bullet -> List EnemyUpdater -> BulletUpdater
+linearYDownBulletUpdate bullet enemyUpdaters =
+  let
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
+    updatedBullet = { bullet | y=bullet.y+5, life=bullet.life - (List.length collidedTargets) }
+  in
+    BulletUpdater updatedBullet [] (linearYDownBulletUpdate updatedBullet)
+
+linearXLeftBulletUpdate : Bullet -> List EnemyUpdater -> BulletUpdater
+linearXLeftBulletUpdate bullet enemyUpdaters =
+  let
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
+    updatedBullet = { bullet | x=bullet.x-5, life=bullet.life - (List.length collidedTargets) }
+  in
+    BulletUpdater updatedBullet [] (linearXLeftBulletUpdate updatedBullet)
+
+linearXRightBulletUpdate : Bullet -> List EnemyUpdater -> BulletUpdater
+linearXRightBulletUpdate bullet enemyUpdaters =
+  let
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
+    updatedBullet = { bullet | x=bullet.x+5, life=bullet.life - (List.length collidedTargets) }
+  in
+    BulletUpdater updatedBullet [] (linearXRightBulletUpdate updatedBullet)
 
 -- BLOB
 
 spawnBlobBullet : Model -> Bool -> BulletUpdater
 spawnBlobBullet model bool =
   let
-    newBullet = {x=model.x-1, y=model.y-model.r-3, width=2, height=3, fill="#FFAAFF", friendly=bool, dmg=1, life=1}
+    newBullet = {x=model.x-1, y=model.y-model.r-3, width=0, height=3, fill="#FFAAFF", friendly=bool, dmg=455, life=1}
   in
-    BulletUpdater newBullet (blobBulletUpdate newBullet newBullet.x newBullet.y)
+    BulletUpdater newBullet [] (blobBulletUpdate newBullet newBullet.x newBullet.y)
 
-blobBulletUpdate : Bullet -> Int -> Int -> Float -> BulletUpdater
-blobBulletUpdate bullet initialX initialY delta =
+blobBulletUpdate : Bullet -> Int -> Int -> List EnemyUpdater -> BulletUpdater
+blobBulletUpdate bullet initialX initialY enemyUpdaters =
   let
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
     newY = bullet.y-1
     deltaY = newY - initialY
     newX = initialX + round(50*(sin(toFloat(deltaY)/25)))
-    updatedBiggerBullet = { bullet | x=newX, width=bullet.width+1, dmg=bullet.dmg+1, y=newY }
+    maxWidth = 45
+    updatedBiggerBullet = { bullet | x=newX, width=bullet.width+1, dmg=bullet.dmg+1, y=newY,
+      life=bullet.life - (List.length collidedTargets) }
+    maxSizeBullet = { bullet | x=newX, width=maxWidth, dmg=bullet.dmg+1, y=newY,
+      life=bullet.life - (List.length collidedTargets) }
   in
-    BulletUpdater updatedBiggerBullet (blobBulletUpdate updatedBiggerBullet initialX initialY)
+    if bullet.width >= 45 then
+      BulletUpdater updatedBiggerBullet [] (blobBulletUpdate maxSizeBullet initialX initialY)
+    else
+      BulletUpdater updatedBiggerBullet [] (blobBulletUpdate updatedBiggerBullet initialX initialY)
 
 -- BOOMERANG
 
@@ -203,53 +263,63 @@ spawnBoomerangBullet model bool =
   let
     newBullet = {x=model.x+2, y=model.y-model.r-3, width=10, height=3, fill="#AAFFAA", friendly=bool, dmg=500, life=3}
   in
-    BulletUpdater newBullet (boomerangForwardBulletUpdate newBullet newBullet.x newBullet.y (newBullet.y-475))
+    BulletUpdater newBullet [] (boomerangForwardBulletUpdate newBullet newBullet.x newBullet.y (newBullet.y-575))
 
-boomerangForwardBulletUpdate : Bullet -> Int -> Int -> Int -> Float -> BulletUpdater
-boomerangForwardBulletUpdate bullet initialX initialY targetY delta =
+boomerangForwardBulletUpdate : Bullet -> Int -> Int -> Int -> List EnemyUpdater -> BulletUpdater
+boomerangForwardBulletUpdate bullet initialX initialY targetY enemyUpdaters =
   let
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
     newY = bullet.y-2
     deltaY = newY - initialY
     newX = initialX + round(250*(sin(toFloat(-deltaY)/150)))
-    updatedBoomerangBullet = { bullet | x=newX, y=newY }
+    updatedBoomerangBullet = { bullet | x=newX, y=newY, life=bullet.life - (List.length collidedTargets) }
   in
     if bullet.y <= targetY then
-      BulletUpdater updatedBoomerangBullet (boomerangBackBulletUpdate updatedBoomerangBullet initialX initialY targetY)
+      BulletUpdater updatedBoomerangBullet [] (boomerangBackBulletUpdate updatedBoomerangBullet initialX initialY targetY)
     else
-      BulletUpdater updatedBoomerangBullet (boomerangForwardBulletUpdate updatedBoomerangBullet initialX initialY targetY)
+      BulletUpdater updatedBoomerangBullet [] (boomerangForwardBulletUpdate updatedBoomerangBullet initialX initialY targetY)
 
-boomerangBackBulletUpdate : Bullet -> Int -> Int -> Int -> Float -> BulletUpdater
-boomerangBackBulletUpdate bullet initialX initialY targetY delta =
+boomerangBackBulletUpdate : Bullet -> Int -> Int -> Int -> List EnemyUpdater -> BulletUpdater
+boomerangBackBulletUpdate bullet initialX initialY targetY enemyUpdaters =
   let
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
     newY = bullet.y+2
     deltaY = newY - initialY
-    newX = initialX + round(250*(sin(toFloat(deltaY)/150)))
-    updatedBoomerangBullet = { bullet | x=newX, y=newY }
+    newX = initialX + round(250*(sin(toFloat(deltaY)/250)))
+    updatedBoomerangBullet = { bullet | x=newX, y=newY, life=bullet.life - (List.length collidedTargets),
+      dmg=1000 }
   in
-    BulletUpdater updatedBoomerangBullet (boomerangBackBulletUpdate updatedBoomerangBullet initialX initialY targetY)
+    BulletUpdater updatedBoomerangBullet [] (boomerangBackBulletUpdate updatedBoomerangBullet initialX initialY targetY)
 
 -- SHRAPNEL
 
 spawnShrapnelBullet : Model -> Bool -> BulletUpdater
 spawnShrapnelBullet model bool =
   let
-    newBullet = {x=model.x-4, y=model.y-model.r-3, width=8, height=3, fill="#FF00FF", friendly=bool, dmg=1, life=1}
+    newBullet = {x=model.x-2, y=model.y-model.r-3, width=8, height=8, fill="#FF00FF", friendly=bool, dmg=1000, life=1}
   in
-    BulletUpdater newBullet (shrapnelBulletUpdate newBullet (newBullet.y-100))
+    BulletUpdater newBullet [] (shrapnelBulletUpdate newBullet (newBullet.y-300))
 
-shrapnelBulletUpdate : Bullet -> Int -> Float -> BulletUpdater
-shrapnelBulletUpdate bullet targetY delta =
+shrapnelBulletUpdate : Bullet -> Int -> List EnemyUpdater -> BulletUpdater
+shrapnelBulletUpdate bullet targetY enemyUpdaters =
   let
-    updatedBullet = { bullet | y=bullet.y-(3)}
+    enemies = List.map getEnemy enemyUpdaters
+    collidedTargets = List.filter (collisionCheck bullet) enemies
+
+    updatedBullet = { bullet | y=bullet.y-3, life=bullet.life - (List.length collidedTargets)}
+    newLeftRightBullet = {x=bullet.x, y=bullet.y, width=bullet.width, height=bullet.height, fill=bullet.fill, friendly=bullet.friendly, dmg=500, life=1}
+    newDownBullet = {x=bullet.x, y=bullet.y, width=bullet.width, height=bullet.height, fill=bullet.fill, friendly=bullet.friendly, dmg=500, life=1}
+
+    newLeftBulletUpdater = BulletUpdater newLeftRightBullet [] (linearXLeftBulletUpdate newLeftRightBullet)
+    newRightBulletUpdater = BulletUpdater newLeftRightBullet [] (linearXRightBulletUpdate newLeftRightBullet)
+    newDownBulletUpdater = BulletUpdater newDownBullet [] (linearYDownBulletUpdate newDownBullet)
   in
     if bullet.y <= targetY then
-      BulletUpdater updatedBullet (doNothingUpdate bullet)
+      BulletUpdater updatedBullet [newLeftBulletUpdater, newRightBulletUpdater, newDownBulletUpdater] (linearYUpBulletUpdate updatedBullet)
     else
-      BulletUpdater updatedBullet (shrapnelBulletUpdate updatedBullet targetY)
-
-
-doNothingUpdate bullet delta =
-  BulletUpdater bullet (doNothingUpdate bullet)
+      BulletUpdater updatedBullet [] (shrapnelBulletUpdate updatedBullet targetY)
 
 
 --- ENEMY LOGIC ---
@@ -258,13 +328,14 @@ doNothingUpdate bullet delta =
 getEnemy : EnemyUpdater -> Enemy
 getEnemy enemyUpdater =
   case enemyUpdater of
-    EnemyUpdater enemy updateFunction ->
+    EnemyUpdater enemy bulletUpdaters updateFunction ->
       enemy
 
+doEnemyUpdate : Model -> EnemyUpdater -> (EnemyUpdater, List BulletUpdater)
 doEnemyUpdate delta enemyUpdater =
     case enemyUpdater of
-      EnemyUpdater enemy updateFunction ->
-        updateFunction delta
+      EnemyUpdater enemy bulletUpdaters updateFunction ->
+        (updateFunction delta, bulletUpdaters)
 
 filterEnemies : EnemyUpdater -> Bool
 filterEnemies enemyUpdater =
@@ -279,58 +350,54 @@ filterEnemies enemyUpdater =
 spawnBasicEnemy : EnemyUpdater
 spawnBasicEnemy =
   let
-    newEnemy = {x=5, y=5, r=30, fill="#FF0000", life=1000}
+    newEnemy = {x=4, y=5, r=30, fill="#FF0000", life=1000}
   in
-    EnemyUpdater newEnemy (basicEnemyUpdate newEnemy)
+    EnemyUpdater newEnemy [] (basicEnemyUpdate newEnemy)
 
-basicEnemyUpdate : Enemy -> Float -> EnemyUpdater
-basicEnemyUpdate enemy delta =
+basicEnemyUpdate : Enemy -> Model -> EnemyUpdater
+basicEnemyUpdate enemy model =
   let
-    updatedEnemy = { enemy | x=enemy.x+2, y=enemy.y+1 }
+    bullets = List.map getBullet model.bullets
+    collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    updatedEnemy = { enemy | x=enemy.x+2, y=enemy.y+1,
+      life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
+    newBullet = {x=enemy.x-2, y=enemy.y+enemy.r+3, width=4, height=3, fill="#FF0000", friendly=False, dmg=500, life=1}
+    newBulletUpdater = BulletUpdater newBullet [] (linearYDownBulletUpdate newBullet)
   in
-    EnemyUpdater updatedEnemy (basicEnemyUpdate updatedEnemy)
+    if enemy.x % 100 == 0 then
+      EnemyUpdater updatedEnemy [newBulletUpdater] (basicEnemyUpdate updatedEnemy)
+    else
+      EnemyUpdater updatedEnemy [] (basicEnemyUpdate updatedEnemy)
 
 
 --- COLLISION LOGIC ---
 
 
-checkForEnemyBulletCollision : Model -> (Model, Cmd a)
-checkForEnemyBulletCollision model =
-  --(model, Cmd.none)
-  ({ model | bullets=List.map(checkBulletBorders (List.map getEnemy model.enemies)) model.bullets,
-      enemies=List.map(checkEnemyBorders (List.map getBullet model.bullets)) model.enemies }, Cmd.none)
-
-checkBulletBorders : List Enemy -> BulletUpdater -> BulletUpdater
-checkBulletBorders enemies bulletUpdater =
-  let
-    bullet = getBullet bulletUpdater
-    collidedTargets = List.filter (collisionCheck bullet) enemies
-    newBullet = { bullet | life=bullet.life - (List.length collidedTargets) }
-  in
-    BulletUpdater newBullet (linearYBulletUpdate newBullet)
-
-checkEnemyBorders : List Bullet -> EnemyUpdater -> EnemyUpdater
-checkEnemyBorders bullets enemyUpdater =
-  let
-    enemy = getEnemy enemyUpdater
-    collidedTargets = List.filter (collisionCheck2 enemy) bullets
-    newEnemy = { enemy | life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) } -- sum up all dmg from bullets
-  in
-    EnemyUpdater newEnemy (basicEnemyUpdate newEnemy)
-
 collisionCheck : Bullet -> Enemy -> Bool
 collisionCheck bullet enemy =
-  shipCollideWithLeftSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
+  (shipCollideWithLeftSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
   ||  shipCollideWithRightSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
   ||  shipCollideWithTopSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
-  ||  shipCollideWithBottomSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
+  ||  shipCollideWithBottomSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height)
+  && bullet.friendly
 
 collisionCheck2 : Enemy -> Bullet -> Bool
 collisionCheck2 enemy bullet =
-  shipCollideWithLeftSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
+  (shipCollideWithLeftSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
   ||  shipCollideWithRightSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
   ||  shipCollideWithTopSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
-  ||  shipCollideWithBottomSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height
+  ||  shipCollideWithBottomSide enemy.x enemy.y enemy.r bullet.x bullet.width bullet.y bullet.height)
+  && bullet.friendly
+
+enemyBulletCollionCheck : Model -> Bullet -> Bool
+enemyBulletCollionCheck model bullet =
+  (shipCollideWithLeftSide model.x model.y model.r bullet.x bullet.width bullet.y bullet.height
+  ||  shipCollideWithRightSide model.x model.y model.r bullet.x bullet.width bullet.y bullet.height
+  ||  shipCollideWithTopSide model.x model.y model.r bullet.x bullet.width bullet.y bullet.height
+  ||  shipCollideWithBottomSide model.x model.y model.r bullet.x bullet.width bullet.y bullet.height)
+  && (not bullet.friendly)
+
+
 
 shipCollideWithLeftSide : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Bool
 shipCollideWithLeftSide cx cy r leftX width topY height =
@@ -346,8 +413,8 @@ shipCollideWithTopSide cx cy r leftX width topY height =
 
 shipCollideWithBottomSide : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Bool
 shipCollideWithBottomSide cx cy r leftX width topY height =
-  topY <= cy + r && topY >= cy - r && leftX >= cx - r && leftX + width <= cx + r
-      
+  topY <= cy + r && topY >= cy - r && leftX >= cx - r && leftX + width <= cx + r 
+
 
 --- BACKGROUND STAR LOGIC ---
 
@@ -375,11 +442,9 @@ subscriptions model =
      Time.every (50*Time.millisecond) MoveStars,
      Time.every (10*Time.millisecond) UpdateBullets,
      Time.every Time.millisecond RemoveBullets,
-     Time.every second SpawnEnemy,
-     Time.every (10*Time.millisecond) UpdateEnemies,
-     Time.every Time.millisecond RemoveEnemies,
-     Time.every Time.millisecond CheckForEnemyBulletCollision]
-
+     Time.every (2.5*second) SpawnEnemy,
+     Time.every (12*Time.millisecond) UpdateEnemies,
+     Time.every Time.millisecond RemoveEnemies]
 
 -- VIEW ---
 
