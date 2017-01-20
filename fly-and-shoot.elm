@@ -51,7 +51,7 @@ init =
   ({x=30,
     y=440,
     r=20,
-    invincible=False, -- CHANGE TO TRUE TO CHEAT
+    invincible=True, -- CHANGE TO TRUE TO CHEAT
     fill="#AAFFFF",
     borders=gameBorders,
     stars=starList,
@@ -122,6 +122,7 @@ type Msg
   | SpawnEnemy Time
   | UpdateEnemies Time
   | RemoveEnemies Time
+  | DetectPlayerHit Time
 
 update: Msg -> Model -> (Model, Cmd a)
 update msg model =
@@ -154,6 +155,17 @@ update msg model =
         ({ model | enemies=updatedEnemyUpdaters, bullets=updatedBulletUpdaters}, Cmd.none)
     RemoveEnemies t ->
       ({ model | enemies=(List.filter filterEnemies model.enemies) }, Cmd.none)
+    DetectPlayerHit t ->
+      let
+        hitRadius = 0
+      in
+        if model.invincible then
+          (model, Cmd.none)
+        else
+          if playerHit model then
+            ({ model | r = hitRadius }, Cmd.none)
+          else
+            (model, Cmd.none)
 
 --- BULLET LOGIC ---
   -- linear gun
@@ -309,15 +321,16 @@ shrapnelBulletUpdate bullet targetY enemyUpdaters =
     collidedTargets = List.filter (collisionCheck bullet) enemies
 
     updatedBullet = { bullet | y=bullet.y-3, life=bullet.life - (List.length collidedTargets)}
-    newLeftRightBullet = {x=bullet.x, y=bullet.y, width=bullet.width, height=bullet.height, fill=bullet.fill, friendly=bullet.friendly, dmg=500, life=1}
-    newDownBullet = {x=bullet.x, y=bullet.y, width=bullet.width, height=bullet.height, fill=bullet.fill, friendly=bullet.friendly, dmg=500, life=1}
+    updatedBulletSplit = { bullet | y=bullet.y-3, life=bullet.life - (List.length collidedTargets), dmg=500, fill="#7F007F"}
+    newLeftRightBullet = {x=bullet.x, y=bullet.y, width=bullet.width, height=bullet.height, fill="#7F007F", friendly=bullet.friendly, dmg=500, life=1}
+    newDownBullet = {x=bullet.x, y=bullet.y, width=bullet.width, height=bullet.height, fill="#7F007F", friendly=bullet.friendly, dmg=500, life=1}
 
     newLeftBulletUpdater = BulletUpdater newLeftRightBullet [] (linearXLeftBulletUpdate newLeftRightBullet)
     newRightBulletUpdater = BulletUpdater newLeftRightBullet [] (linearXRightBulletUpdate newLeftRightBullet)
     newDownBulletUpdater = BulletUpdater newDownBullet [] (linearYDownBulletUpdate newDownBullet)
   in
     if bullet.y <= targetY then
-      BulletUpdater updatedBullet [newLeftBulletUpdater, newRightBulletUpdater, newDownBulletUpdater] (linearYUpBulletUpdate updatedBullet)
+      BulletUpdater updatedBulletSplit [newLeftBulletUpdater, newRightBulletUpdater, newDownBulletUpdater] (linearYUpBulletUpdate updatedBulletSplit)
     else
       BulletUpdater updatedBullet [] (shrapnelBulletUpdate updatedBullet targetY)
 
@@ -397,7 +410,16 @@ enemyBulletCollionCheck model bullet =
   ||  shipCollideWithBottomSide model.x model.y model.r bullet.x bullet.width bullet.y bullet.height)
   && (not bullet.friendly)
 
-
+enemyShipCollisionCheck : Model -> Enemy -> Bool
+enemyShipCollisionCheck model enemy =
+  (model.x + model.r >= enemy.x - enemy.r && model.x + model.r <= enemy.x + enemy.r
+      && model.y + model.r <= enemy.y + enemy.r  && model.y - model.r >= enemy.y - enemy.r) ||
+  (model.x - model.r <= enemy.x + enemy.r && model.x - model.r >= enemy.x - enemy.r
+      && model.y + model.r <= enemy.y + enemy.r  && model.y - model.r >= enemy.y - enemy.r) ||
+  (model.y + model.r >= enemy.y - enemy.r && model.y + model.r <= enemy.y + enemy.r
+      && model.x - model.r >= enemy.x - enemy.r  && model.x + model.r <= enemy.x + enemy.r) ||
+  (model.y - model.r <= enemy.y + enemy.r && model.y - model.r >= enemy.y - enemy.r
+      && model.x - model.r >= enemy.x - enemy.r  && model.x + model.r <= enemy.x + enemy.r)
 
 shipCollideWithLeftSide : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Bool
 shipCollideWithLeftSide cx cy r leftX width topY height =
@@ -414,6 +436,26 @@ shipCollideWithTopSide cx cy r leftX width topY height =
 shipCollideWithBottomSide : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Bool
 shipCollideWithBottomSide cx cy r leftX width topY height =
   topY <= cy + r && topY >= cy - r && leftX >= cx - r && leftX + width <= cx + r 
+
+playerHit : Model -> Bool
+playerHit model =
+  (enemyBulletHitPlayer model model.bullets) || (enemyShipHitPlayer model model.enemies)
+
+enemyBulletHitPlayer : Model -> List BulletUpdater -> Bool
+enemyBulletHitPlayer model bulletUpdaters =
+  let
+    bullets = List.map getBullet bulletUpdaters
+    hitBullets = List.filter(enemyBulletCollionCheck model) bullets
+  in
+    List.length hitBullets > 0
+
+enemyShipHitPlayer : Model -> List EnemyUpdater -> Bool
+enemyShipHitPlayer model enemyUpdaters =
+  let
+    enemies = List.map getEnemy enemyUpdaters
+    hitEnemies = List.filter(enemyShipCollisionCheck model) enemies
+  in
+    List.length hitEnemies > 0
 
 
 --- BACKGROUND STAR LOGIC ---
@@ -444,7 +486,8 @@ subscriptions model =
      Time.every Time.millisecond RemoveBullets,
      Time.every (2.5*second) SpawnEnemy,
      Time.every (12*Time.millisecond) UpdateEnemies,
-     Time.every Time.millisecond RemoveEnemies]
+     Time.every Time.millisecond RemoveEnemies,
+     Time.every Time.millisecond DetectPlayerHit]
 
 -- VIEW ---
 
