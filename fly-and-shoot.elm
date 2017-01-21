@@ -5,6 +5,7 @@ import Svg.Attributes exposing (..)
 import Time exposing (Time, second)
 import List
 import Keyboard
+import Random
 
 {- INSTRUCTIONS
   - Use your mouse to move the plane
@@ -13,15 +14,14 @@ import Keyboard
 
   GUNS
   Linear Shooter - each shot does 500 dmg
-  Blob Shooter - each shot does more dmg with time
+  Blob Shooter - each shot does more dmg with time and homes onto enemies
   Boomerang Shooter - each shot does 500 dmg when it moves forward, 1000 dmg when it moves backwards, can hit up to 3x
   Shranpel Shooter - each shot deals 1000 dmg, travels a certain distance, then explodes into 4 bullets that each do 500 dmg
 
   ENEMIES
   Basic Red Enemy - 1000 health
+  Suicide Enemy - 500 health
 
-  QUESTIONS
-  - Hide mouse
 -}
 
 main =
@@ -47,6 +47,7 @@ type alias Model = {
   , stars : List Star
   , bullets : List BulletUpdater
   , enemies : List EnemyUpdater
+  , seed : Random.Seed
 }
 
 init : (Model, Cmd Msg)
@@ -60,7 +61,8 @@ init =
     borders=gameBorders,
     stars=starList,
     bullets=[],
-    enemies=[]}, Cmd.none)
+    enemies=[],
+    seed=Random.initialSeed 123}, Cmd.none)
 
 type alias Borders = {left : Int, right : Int, top : Int, bottom : Int, fill : String}
 gameBorders : Borders
@@ -125,12 +127,13 @@ type Msg
   | UpdateBullets Time
   | RemoveBullets Time
   | SpawnEnemy Time
+  | PickEnemy Int
   | UpdateEnemies Time
   | RemoveEnemies Time
   | DetectPlayerHit Time
   
 
-update: Msg -> Model -> (Model, Cmd a)
+update: Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Move x y ->
@@ -152,7 +155,7 @@ update msg model =
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     UpdateBullets t ->
-      let 
+      let
         updatedBulletsAndNewBullets = List.map(doBulletUpdate model.enemies) model.bullets
         updatedBulletUpdaters = List.map(\(b1,b2) -> b1) updatedBulletsAndNewBullets
         newBullets = List.map(\(b1,b2) -> b2) updatedBulletsAndNewBullets
@@ -162,9 +165,14 @@ update msg model =
     RemoveBullets t ->
       ({ model | bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
     SpawnEnemy t ->
-      ({ model | enemies=model.enemies ++ [spawnSuicideEnemy] }, Cmd.none)
+      (model, Random.generate PickEnemy (Random.int 1 2))
+    PickEnemy num ->
+      case num of 
+        1 -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
+        2 -> ({ model |  enemies=model.enemies ++ [spawnSuicideEnemy] }, Cmd.none)
+        _ -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
     UpdateEnemies t ->
-      let 
+      let
         updatedEnemiesAndNewBullets = List.map(doEnemyUpdate model) model.enemies
         updatedEnemyUpdaters = List.map(\(e,b) -> e) updatedEnemiesAndNewBullets
         newBullets = List.map(\(e,b) -> b) updatedEnemiesAndNewBullets
@@ -184,6 +192,7 @@ update msg model =
             ({ model | r = hitRadius }, Cmd.none)
           else
             (model, Cmd.none)
+
 
 --- BULLET LOGIC ---
   -- linear gun
@@ -291,7 +300,6 @@ blobBulletUpdate bullet enemyUpdaters =
       BulletUpdater maxSizeHomingBullet [] (blobBulletUpdate maxSizeHomingBullet)
     else
       BulletUpdater updatedBiggerHomingBullet [] (blobBulletUpdate updatedBiggerHomingBullet)
-
 
 -- BOOMERANG
 
@@ -426,7 +434,8 @@ suicideEnemyUpdate enemy model =
   in
     EnemyUpdater updatedEnemy [] (suicideEnemyUpdate updatedEnemy)
 
--- HOMING LOGIC ---
+
+--- HOMING LOGIC ---
 
 
 homeOnTarget : Int -> Int -> Int
