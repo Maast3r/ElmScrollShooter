@@ -21,6 +21,7 @@ import Random
   ENEMIES
   Basic Red Enemy - 1000 health
   Suicide Enemy - 500 health
+  Circle Enemy - 1000 health
 
 -}
 
@@ -153,11 +154,12 @@ update msg model =
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     SpawnEnemy t ->
-      (model, Random.generate PickEnemy (Random.int 1 2))
+      (model, Random.generate PickEnemy (Random.int 1 3))
     PickEnemy num ->
       case num of 
         1 -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
         2 -> ({ model |  enemies=model.enemies ++ [spawnSuicideEnemy] }, Cmd.none)
+        3 -> ({ model |  enemies=model.enemies ++ [spawnCircleEnemy] }, Cmd.none)
         _ -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
     UpdateEnemiesAndBullets t ->
       let
@@ -180,11 +182,10 @@ update msg model =
       in
         if model.invincible then
           (model, Cmd.none)
+        else if playerHit model then
+          ({ model | r = hitRadius }, Cmd.none)
         else
-          if playerHit model then
-            ({ model | r = hitRadius }, Cmd.none)
-          else
-            (model, Cmd.none)
+          (model, Cmd.none)
 
 
 --- BULLET LOGIC ---
@@ -398,12 +399,17 @@ basicEnemyUpdate enemy bulletUpdaters model =
   let
     bullets = List.map getBullet bulletUpdaters
     collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    collidedWithPlayer = enemyShipCollisionCheck model enemy
+
     updatedEnemy = { enemy | x=enemy.x+2, y=enemy.y+1,
       life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
-    newBullet = {x=enemy.x-2, y=enemy.y+enemy.r+3, width=4, height=3, fill="#FF0000", friendly=False, dmg=500, life=1}
+    deadEnemy = { enemy | x=enemy.x+2, y=enemy.y+1, life=0 }
+    newBullet = { x=enemy.x-2, y=enemy.y+enemy.r+3, width=4, height=3, fill="#FF0000", friendly=False, dmg=500, life=1 }
     newBulletUpdater = BulletUpdater newBullet [] (linearYDownBulletUpdate newBullet)
   in
-    if enemy.x % 100 == 0 then
+    if collidedWithPlayer then
+      EnemyUpdater deadEnemy [] (basicEnemyUpdate deadEnemy)
+    else if enemy.x % 100 == 0 then
       EnemyUpdater updatedEnemy [newBulletUpdater] (basicEnemyUpdate updatedEnemy)
     else
       EnemyUpdater updatedEnemy [] (basicEnemyUpdate updatedEnemy)
@@ -420,12 +426,67 @@ suicideEnemyUpdate enemy bulletUpdaters model =
   let
     bullets = List.map getBullet bulletUpdaters
     collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    collidedWithPlayer = enemyShipCollisionCheck model enemy
+
     newX = homeOnTarget enemy.x model.x
     newY = homeOnTarget enemy.y model.y
     updatedEnemy = { enemy | x=enemy.x+newX, y=enemy.y+newY,
       life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
+    deadEnemy = { enemy | x=enemy.x+newX, y=enemy.y+newY, life=0 }
   in
-    EnemyUpdater updatedEnemy [] (suicideEnemyUpdate updatedEnemy)
+    if collidedWithPlayer then
+      EnemyUpdater deadEnemy [] (suicideEnemyUpdate deadEnemy)
+    else
+      EnemyUpdater updatedEnemy [] (suicideEnemyUpdate updatedEnemy)
+
+spawnCircleEnemy : EnemyUpdater
+spawnCircleEnemy =
+  let
+    newEnemy = {x=550, y=200, r=30, fill="#FF6666", life=1000}
+  in
+    EnemyUpdater newEnemy [] (circleEnemyDownUpdate newEnemy newEnemy.x newEnemy.y (newEnemy.y+780))
+
+circleEnemyDownUpdate : Enemy -> Int -> Int -> Int -> List BulletUpdater -> Model -> EnemyUpdater
+circleEnemyDownUpdate enemy initialX initialY targetY bulletUpdaters model =
+  let
+    bullets = List.map getBullet bulletUpdaters
+    collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    collidedWithPlayer = enemyShipCollisionCheck model enemy
+
+    newY = enemy.y+2
+    deltaY = newY - initialY
+    newX = initialX + round(300*(sin(toFloat(deltaY)/250)))
+    updatedEnemy = { enemy | x=newX, y=newY,
+      life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
+    deadEnemy = { enemy | x=enemy.x+newX, y=enemy.y+newY, life=0 }
+  in
+    if collidedWithPlayer then
+      EnemyUpdater deadEnemy [] (circleEnemyDownUpdate deadEnemy initialX initialY targetY)
+    else if enemy.y >= targetY then
+      EnemyUpdater updatedEnemy [] (circleEnemyUpUpdate updatedEnemy initialX initialY (updatedEnemy.y-780))
+    else
+      EnemyUpdater updatedEnemy [] (circleEnemyDownUpdate updatedEnemy initialX initialY targetY)
+
+circleEnemyUpUpdate : Enemy -> Int -> Int -> Int -> List BulletUpdater -> Model -> EnemyUpdater
+circleEnemyUpUpdate enemy initialX initialY targetY bulletUpdaters model =
+  let
+    bullets = List.map getBullet bulletUpdaters
+    collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    collidedWithPlayer = enemyShipCollisionCheck model enemy
+
+    newY = enemy.y-2
+    deltaY = newY - initialY
+    newX = initialX + round(300*(sin(toFloat(-deltaY)/250)))
+    updatedEnemy = { enemy | x=newX, y=newY,
+      life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
+    deadEnemy = { enemy | x=enemy.x+newX, y=enemy.y+newY, life=0 }
+  in
+    if collidedWithPlayer then
+      EnemyUpdater deadEnemy [] (circleEnemyUpUpdate deadEnemy initialX initialY targetY)
+    else if enemy.y <= targetY then
+      EnemyUpdater updatedEnemy [] (circleEnemyDownUpdate updatedEnemy initialX initialY (updatedEnemy.y+780))
+    else
+      EnemyUpdater updatedEnemy [] (circleEnemyUpUpdate updatedEnemy initialX initialY targetY)
 
 
 --- HOMING LOGIC ---
@@ -555,10 +616,11 @@ subscriptions model =
      Mouse.clicks (\{x, y} -> Click),
      Keyboard.downs (\k -> handleDown k),
      Time.every (50*Time.millisecond) MoveStars,
-     Time.every (2.5*second) SpawnEnemy,
+     Time.every (second) SpawnEnemy,
      Time.every (10*Time.millisecond) UpdateEnemiesAndBullets,
      Time.every Time.millisecond RemoveEnemiesAndBullets,
      Time.every Time.millisecond DetectPlayerHit]
+
 
 --- VIEW ---
 
