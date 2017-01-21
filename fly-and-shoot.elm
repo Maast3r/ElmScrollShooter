@@ -19,9 +19,10 @@ import Random
   Shranpel Shooter - each shot deals 1000 dmg, travels a certain distance, then explodes into 4 bullets that each do 500 dmg
 
   ENEMIES
-  Basic Red Enemy - 1000 health
-  Suicide Enemy - 500 health
-  Circle Enemy - 1000 health
+  Basic Red Enemy - 1000 health shoots downward
+  Suicide Enemy - 500 health tries to crash into you
+  Circle Enemy - 1000 health moves in a circle
+  Exploder Enemy - 1000 health shoots out 4 bullets when hit by bullet
 
 -}
 
@@ -128,7 +129,6 @@ type Msg
   | SpawnEnemy Time
   | PickEnemy Int
   | UpdateEnemiesAndBullets Time
-  | RemoveEnemiesAndBullets Time
   | DetectPlayerHit Time
   
 
@@ -154,13 +154,14 @@ update msg model =
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
     SpawnEnemy t ->
-      (model, Random.generate PickEnemy (Random.int 1 3))
+      (model, Random.generate PickEnemy (Random.int 1 4))
     PickEnemy num ->
       case num of 
         1 -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
         2 -> ({ model |  enemies=model.enemies ++ [spawnSuicideEnemy] }, Cmd.none)
         3 -> ({ model |  enemies=model.enemies ++ [spawnCircleEnemy] }, Cmd.none)
-        _ -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
+        4 -> ({ model |  enemies=model.enemies ++ [spawnExploderEnemy] }, Cmd.none)
+        _ -> ({ model |  enemies=model.enemies ++ [spawnExploderEnemy] }, Cmd.none)
     UpdateEnemiesAndBullets t ->
       let
         bulletUpdate = List.map(doBulletUpdate model.enemies) model.bullets
@@ -168,14 +169,12 @@ update msg model =
         bulletUpdateNewBullets = List.map(\(b1,b2) -> b2) bulletUpdate
         concatBullets = List.foldr (++) bulletUpdateOldBullets bulletUpdateNewBullets
 
-        updatedEnemiesAndNewBullets = List.map(doEnemyUpdate concatBullets model) model.enemies
+        updatedEnemiesAndNewBullets = List.map(doEnemyUpdate model.bullets model) model.enemies
         updatedEnemyUpdaters = List.map(\(e,b) -> e) updatedEnemiesAndNewBullets
         enemyGeneratedNewBullets = List.map(\(e,b) -> b) updatedEnemiesAndNewBullets
         updatedBulletUpdaters = List.foldr (++) concatBullets enemyGeneratedNewBullets
       in
-        ({ model | enemies=updatedEnemyUpdaters, bullets=updatedBulletUpdaters}, Cmd.none)
-    RemoveEnemiesAndBullets t ->
-      ({ model | enemies=(List.filter filterEnemies model.enemies), bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
+        ({ model | enemies=(List.filter filterEnemies updatedEnemyUpdaters), bullets=(List.filter filterBullets updatedBulletUpdaters)}, Cmd.none)
     DetectPlayerHit t ->
       let
         hitRadius = 0
@@ -189,10 +188,6 @@ update msg model =
 
 
 --- BULLET LOGIC ---
-  -- linear gun
-  -- growing, homing blob
-  -- boomerang, lives through 3 hits
-  -- shrapnel gun that shoots more bullets
 
 
 getBullet : BulletUpdater -> Bullet
@@ -266,7 +261,7 @@ linearXRightBulletUpdate bullet enemyUpdaters =
 spawnBlobBullet : Model -> Bool -> BulletUpdater
 spawnBlobBullet model bool =
   let
-    newBullet = {x=model.x-1, y=model.y-model.r-3, width=0, height=3, fill="#FFAAFF", friendly=bool, dmg=750, life=1}
+    newBullet = {x=model.x-1, y=model.y-model.r-3, width=0, height=3, fill="#FFAAFF", friendly=bool, dmg=150, life=1}
   in
     BulletUpdater newBullet [] (blobBulletUpdate newBullet)
 
@@ -488,6 +483,38 @@ circleEnemyUpUpdate enemy initialX initialY targetY bulletUpdaters model =
     else
       EnemyUpdater updatedEnemy [] (circleEnemyUpUpdate updatedEnemy initialX initialY targetY)
 
+spawnExploderEnemy : EnemyUpdater
+spawnExploderEnemy =
+  let
+    newEnemy = {x=1000, y=5, r=30, fill="#FFC6C3", life=1000}
+  in
+    EnemyUpdater newEnemy [] (exploderEnemyUpdate newEnemy)
+
+exploderEnemyUpdate : Enemy -> List BulletUpdater -> Model -> EnemyUpdater
+exploderEnemyUpdate enemy bulletUpdaters model =
+  let
+    bullets = List.map getBullet bulletUpdaters
+    collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    collidedWithPlayer = enemyShipCollisionCheck model enemy
+
+    dmgTaken = List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets)
+    updatedEnemy = { enemy | x=enemy.x-1, y=enemy.y+2,
+      life=(enemy.life - dmgTaken) }
+    deadEnemy = { enemy | x=enemy.x+2, y=enemy.y+1, life=0 }
+    
+    newBullet = { x=enemy.x, y=enemy.y, width=4, height=3, fill="#FFC6C3", friendly=False, dmg=500, life=1 }
+    newUpBulletUpdater = BulletUpdater newBullet [] (linearYUpBulletUpdate newBullet)
+    newDownBulletUpdater = BulletUpdater newBullet [] (linearYDownBulletUpdate newBullet)
+    newLeftBulletUpdater = BulletUpdater newBullet [] (linearXLeftBulletUpdate newBullet)
+    newRightBulletUpdater = BulletUpdater newBullet [] (linearXRightBulletUpdate newBullet)
+  in
+    if collidedWithPlayer then
+      EnemyUpdater deadEnemy [] (exploderEnemyUpdate deadEnemy)
+    else if dmgTaken > 0 then
+      EnemyUpdater updatedEnemy [newUpBulletUpdater, newDownBulletUpdater, newLeftBulletUpdater, newRightBulletUpdater] (exploderEnemyUpdate updatedEnemy)
+    else
+      EnemyUpdater updatedEnemy [] (exploderEnemyUpdate updatedEnemy)
+
 
 --- HOMING LOGIC ---
 
@@ -618,7 +645,6 @@ subscriptions model =
      Time.every (50*Time.millisecond) MoveStars,
      Time.every (second) SpawnEnemy,
      Time.every (10*Time.millisecond) UpdateEnemiesAndBullets,
-     Time.every Time.millisecond RemoveEnemiesAndBullets,
      Time.every Time.millisecond DetectPlayerHit]
 
 
