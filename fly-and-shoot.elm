@@ -162,7 +162,7 @@ update msg model =
     RemoveBullets t ->
       ({ model | bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
     SpawnEnemy t ->
-      ({ model | enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
+      ({ model | enemies=model.enemies ++ [spawnSuicideEnemy] }, Cmd.none)
     UpdateEnemies t ->
       let 
         updatedEnemiesAndNewBullets = List.map(doEnemyUpdate model) model.enemies
@@ -263,28 +263,35 @@ linearXRightBulletUpdate bullet enemyUpdaters =
 spawnBlobBullet : Model -> Bool -> BulletUpdater
 spawnBlobBullet model bool =
   let
-    newBullet = {x=model.x-1, y=model.y-model.r-3, width=0, height=3, fill="#FFAAFF", friendly=bool, dmg=455, life=1}
+    newBullet = {x=model.x-1, y=model.y-model.r-3, width=0, height=3, fill="#FFAAFF", friendly=bool, dmg=750, life=1}
   in
-    BulletUpdater newBullet [] (blobBulletUpdate newBullet newBullet.x newBullet.y)
+    BulletUpdater newBullet [] (blobBulletUpdate newBullet)
 
-blobBulletUpdate : Bullet -> Int -> Int -> List EnemyUpdater -> BulletUpdater
-blobBulletUpdate bullet initialX initialY enemyUpdaters =
+blobBulletUpdate : Bullet -> List EnemyUpdater -> BulletUpdater
+blobBulletUpdate bullet enemyUpdaters =
   let
     enemies = List.map getEnemy enemyUpdaters
     collidedTargets = List.filter (collisionCheck bullet) enemies
-    newY = bullet.y-1
-    deltaY = newY - initialY
-    newX = initialX + round(50*(sin(toFloat(deltaY)/25)))
+    firstEnemy = Maybe.withDefault {x=-100, y=-100, r=30, fill="#FF0000", life=1000} (List.head enemies)
+    newX = homeOnTarget bullet.x firstEnemy.x
+    newY = homeOnTarget bullet.y firstEnemy.y
     maxWidth = 45
-    updatedBiggerBullet = { bullet | x=newX, width=bullet.width+1, dmg=bullet.dmg+1, y=newY,
+    maxSizeLinearBullet = { bullet | width=maxWidth, y=bullet.y-3,life=bullet.life - (List.length collidedTargets) }
+    updatedBiggerLinearBullet = { bullet | width=bullet.width+1, dmg=bullet.dmg+10, y=bullet.y-3,
       life=bullet.life - (List.length collidedTargets) }
-    maxSizeBullet = { bullet | x=newX, width=maxWidth, dmg=bullet.dmg+1, y=newY,
+    maxSizeHomingBullet = { bullet | x=bullet.x+newX, width=maxWidth, y=bullet.y+newY, life=bullet.life - (List.length collidedTargets) }
+    updatedBiggerHomingBullet = { bullet | x=bullet.x+newX, width=bullet.width+1, dmg=bullet.dmg+10, y=bullet.y+newY,
       life=bullet.life - (List.length collidedTargets) }
   in
-    if bullet.width >= 45 then
-      BulletUpdater updatedBiggerBullet [] (blobBulletUpdate maxSizeBullet initialX initialY)
+    if List.length enemies == 0 && bullet.width >= maxWidth then
+      BulletUpdater maxSizeLinearBullet [] (blobBulletUpdate maxSizeLinearBullet)
+    else if List.length enemies == 0 then
+      BulletUpdater updatedBiggerLinearBullet [] (blobBulletUpdate updatedBiggerLinearBullet)
+    else if bullet.width >= maxWidth then
+      BulletUpdater maxSizeHomingBullet [] (blobBulletUpdate maxSizeHomingBullet)
     else
-      BulletUpdater updatedBiggerBullet [] (blobBulletUpdate updatedBiggerBullet initialX initialY)
+      BulletUpdater updatedBiggerHomingBullet [] (blobBulletUpdate updatedBiggerHomingBullet)
+
 
 -- BOOMERANG
 
@@ -400,6 +407,37 @@ basicEnemyUpdate enemy model =
     else
       EnemyUpdater updatedEnemy [] (basicEnemyUpdate updatedEnemy)
 
+spawnSuicideEnemy :EnemyUpdater
+spawnSuicideEnemy =
+  let
+    newEnemy = {x=4, y=5, r=30, fill="#7F0000", life=500}
+  in
+    EnemyUpdater newEnemy [] (suicideEnemyUpdate newEnemy)
+
+suicideEnemyUpdate : Enemy -> Model -> EnemyUpdater
+suicideEnemyUpdate enemy model =
+  let
+    bullets = List.map getBullet model.bullets
+    collidedTargets = List.filter (collisionCheck2 enemy) bullets
+    newX = homeOnTarget enemy.x model.x
+    newY = homeOnTarget enemy.y model.y
+    updatedEnemy = { enemy | x=enemy.x+newX, y=enemy.y+newY,
+      life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
+  in
+    EnemyUpdater updatedEnemy [] (suicideEnemyUpdate updatedEnemy)
+
+-- HOMING LOGIC ---
+
+
+homeOnTarget : Int -> Int -> Int
+homeOnTarget yourPos targetPos =
+  if yourPos < targetPos then
+    2
+  else if yourPos == targetPos then
+    0
+  else
+    -2
+
 
 --- COLLISION LOGIC ---
 
@@ -505,7 +543,7 @@ handleDown state =
         _ -> Key 0
 
 
--- SUBSCRIPTIONS ---
+--- SUBSCRIPTIONS ---
 
 
 subscriptions: Model -> Sub Msg
@@ -522,7 +560,7 @@ subscriptions model =
      Time.every Time.millisecond RemoveEnemies,
      Time.every Time.millisecond DetectPlayerHit]
 
--- VIEW ---
+--- VIEW ---
 
 
 view : Model -> Html Msg
@@ -538,3 +576,4 @@ view model =
           fill bullet.fill] [])) (List.map getBullet model.bullets)
       ++ [circle [ cx (toString model.x), cy (toString model.y), r (toString model.r), fill model.fill ] []]
       )
+
