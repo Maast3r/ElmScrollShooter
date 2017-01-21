@@ -113,7 +113,7 @@ type alias Bullet = {x : Int, y : Int, width : Int, height : Int, fill : String,
 type BulletUpdater = BulletUpdater Bullet (List BulletUpdater) (List EnemyUpdater -> BulletUpdater)
 
 type alias Enemy = {x : Int, y : Int, r : Int, fill : String, life : Int}
-type EnemyUpdater = EnemyUpdater Enemy (List BulletUpdater) (Model -> EnemyUpdater)
+type EnemyUpdater = EnemyUpdater Enemy (List BulletUpdater) ((List BulletUpdater) -> Model -> EnemyUpdater)
 
 
 --- UPDATE ---
@@ -124,12 +124,10 @@ type Msg
   | Click
   | Key Int
   | MoveStars Time 
-  | UpdateBullets Time
-  | RemoveBullets Time
   | SpawnEnemy Time
   | PickEnemy Int
-  | UpdateEnemies Time
-  | RemoveEnemies Time
+  | UpdateEnemiesAndBullets Time
+  | RemoveEnemiesAndBullets Time
   | DetectPlayerHit Time
   
 
@@ -154,16 +152,6 @@ update msg model =
         _ -> (model, Cmd.none)
     MoveStars t ->
       ({ model | stars=(List.map moveStarsHelper model.stars)}, Cmd.none)
-    UpdateBullets t ->
-      let
-        updatedBulletsAndNewBullets = List.map(doBulletUpdate model.enemies) model.bullets
-        updatedBulletUpdaters = List.map(\(b1,b2) -> b1) updatedBulletsAndNewBullets
-        newBullets = List.map(\(b1,b2) -> b2) updatedBulletsAndNewBullets
-        result = List.foldr (++) updatedBulletUpdaters newBullets
-      in
-        ({ model | bullets=result }, Cmd.none)
-    RemoveBullets t ->
-      ({ model | bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
     SpawnEnemy t ->
       (model, Random.generate PickEnemy (Random.int 1 2))
     PickEnemy num ->
@@ -171,16 +159,21 @@ update msg model =
         1 -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
         2 -> ({ model |  enemies=model.enemies ++ [spawnSuicideEnemy] }, Cmd.none)
         _ -> ({ model |  enemies=model.enemies ++ [spawnBasicEnemy] }, Cmd.none)
-    UpdateEnemies t ->
+    UpdateEnemiesAndBullets t ->
       let
-        updatedEnemiesAndNewBullets = List.map(doEnemyUpdate model) model.enemies
+        bulletUpdate = List.map(doBulletUpdate model.enemies) model.bullets
+        bulletUpdateOldBullets = List.map(\(b1,b2) -> b1) bulletUpdate
+        bulletUpdateNewBullets = List.map(\(b1,b2) -> b2) bulletUpdate
+        concatBullets = List.foldr (++) bulletUpdateOldBullets bulletUpdateNewBullets
+
+        updatedEnemiesAndNewBullets = List.map(doEnemyUpdate concatBullets model) model.enemies
         updatedEnemyUpdaters = List.map(\(e,b) -> e) updatedEnemiesAndNewBullets
-        newBullets = List.map(\(e,b) -> b) updatedEnemiesAndNewBullets
-        updatedBulletUpdaters = List.foldr (++) model.bullets newBullets
+        enemyGeneratedNewBullets = List.map(\(e,b) -> b) updatedEnemiesAndNewBullets
+        updatedBulletUpdaters = List.foldr (++) concatBullets enemyGeneratedNewBullets
       in
         ({ model | enemies=updatedEnemyUpdaters, bullets=updatedBulletUpdaters}, Cmd.none)
-    RemoveEnemies t ->
-      ({ model | enemies=(List.filter filterEnemies model.enemies) }, Cmd.none)
+    RemoveEnemiesAndBullets t ->
+      ({ model | enemies=(List.filter filterEnemies model.enemies), bullets=(List.filter filterBullets model.bullets) }, Cmd.none)
     DetectPlayerHit t ->
       let
         hitRadius = 0
@@ -196,7 +189,7 @@ update msg model =
 
 --- BULLET LOGIC ---
   -- linear gun
-  -- growing blob
+  -- growing, homing blob
   -- boomerang, lives through 3 hits
   -- shrapnel gun that shoots more bullets
 
@@ -377,11 +370,11 @@ getEnemy enemyUpdater =
     EnemyUpdater enemy bulletUpdaters updateFunction ->
       enemy
 
-doEnemyUpdate : Model -> EnemyUpdater -> (EnemyUpdater, List BulletUpdater)
-doEnemyUpdate delta enemyUpdater =
+doEnemyUpdate : List BulletUpdater -> Model -> EnemyUpdater -> (EnemyUpdater, List BulletUpdater)
+doEnemyUpdate bullets model enemyUpdater =
     case enemyUpdater of
       EnemyUpdater enemy bulletUpdaters updateFunction ->
-        (updateFunction delta, bulletUpdaters)
+        (updateFunction bullets model, bulletUpdaters)
 
 filterEnemies : EnemyUpdater -> Bool
 filterEnemies enemyUpdater =
@@ -400,10 +393,10 @@ spawnBasicEnemy =
   in
     EnemyUpdater newEnemy [] (basicEnemyUpdate newEnemy)
 
-basicEnemyUpdate : Enemy -> Model -> EnemyUpdater
-basicEnemyUpdate enemy model =
+basicEnemyUpdate : Enemy -> List BulletUpdater -> Model -> EnemyUpdater
+basicEnemyUpdate enemy bulletUpdaters model =
   let
-    bullets = List.map getBullet model.bullets
+    bullets = List.map getBullet bulletUpdaters
     collidedTargets = List.filter (collisionCheck2 enemy) bullets
     updatedEnemy = { enemy | x=enemy.x+2, y=enemy.y+1,
       life=(enemy.life - (List.foldr (+) 0 (List.map(\b -> b.dmg) collidedTargets))) }
@@ -415,17 +408,17 @@ basicEnemyUpdate enemy model =
     else
       EnemyUpdater updatedEnemy [] (basicEnemyUpdate updatedEnemy)
 
-spawnSuicideEnemy :EnemyUpdater
+spawnSuicideEnemy : EnemyUpdater
 spawnSuicideEnemy =
   let
     newEnemy = {x=4, y=5, r=30, fill="#7F0000", life=500}
   in
     EnemyUpdater newEnemy [] (suicideEnemyUpdate newEnemy)
 
-suicideEnemyUpdate : Enemy -> Model -> EnemyUpdater
-suicideEnemyUpdate enemy model =
+suicideEnemyUpdate : Enemy -> List BulletUpdater -> Model -> EnemyUpdater
+suicideEnemyUpdate enemy bulletUpdaters model =
   let
-    bullets = List.map getBullet model.bullets
+    bullets = List.map getBullet bulletUpdaters
     collidedTargets = List.filter (collisionCheck2 enemy) bullets
     newX = homeOnTarget enemy.x model.x
     newY = homeOnTarget enemy.y model.y
@@ -562,11 +555,9 @@ subscriptions model =
      Mouse.clicks (\{x, y} -> Click),
      Keyboard.downs (\k -> handleDown k),
      Time.every (50*Time.millisecond) MoveStars,
-     Time.every (10*Time.millisecond) UpdateBullets,
-     Time.every Time.millisecond RemoveBullets,
      Time.every (2.5*second) SpawnEnemy,
-     Time.every (12*Time.millisecond) UpdateEnemies,
-     Time.every Time.millisecond RemoveEnemies,
+     Time.every (10*Time.millisecond) UpdateEnemiesAndBullets,
+     Time.every Time.millisecond RemoveEnemiesAndBullets,
      Time.every Time.millisecond DetectPlayerHit]
 
 --- VIEW ---
